@@ -1,0 +1,92 @@
+import requests
+import pandas as pd
+
+# Function to fetch data from the Census APIs, now includes a 'fields' argument
+def fetch_data(url, params, fields):
+    params["get"] = fields  # Set the fields to fetch based on the function argument
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        header = data.pop(0)
+        return pd.DataFrame(data, columns=header)
+    else:
+        print(f"Failed to retrieve data from {url}: {response.status_code}")
+        return pd.DataFrame()
+
+# Common parameters for Census API calls, without the 'get' field
+params = {
+    "for": "place:*",
+    "key": "your_key_here"
+}
+
+# Specify the fields for each year's data call
+fields_2019 = "NAME,POP"
+fields_other_years = "GEONAME,POP"
+
+# URLs for each year's data
+url_2019 = "https://api.census.gov/data/2019/pep/population"
+url_2018 = "https://api.census.gov/data/2018/pep/population"
+url_2017 = "https://api.census.gov/data/2017/pep/population"
+url_2016 = "https://api.census.gov/data/2016/pep/population"
+url_2015 = "https://api.census.gov/data/2015/pep/population"
+
+# Fetch data from 2019 with appropriate fields
+df_2019 = fetch_data(url_2019, params, fields_2019)
+
+# Fetch data from all other years with their respective fields
+df_2018 = fetch_data(url_2018, params, fields_other_years)
+df_2017 = fetch_data(url_2017, params, fields_other_years)
+df_2016 = fetch_data(url_2016, params, fields_other_years)
+df_2015 = fetch_data(url_2015, params, fields_other_years)
+
+# Combine and rename GEONAME and NAME columns
+def combine_and_rename(df, year):
+    if year == 2019:
+        df['Location'] = df['NAME']
+    else:
+        df['Location'] = df['GEONAME']
+    df.drop(['NAME', 'GEONAME'], axis=1, errors='ignore', inplace=True)
+    df['Year'] = year
+    return df
+
+df_2019 = combine_and_rename(df_2019, 2019)
+df_2018 = combine_and_rename(df_2018, 2018)
+df_2017 = combine_and_rename(df_2017, 2017)
+df_2016 = combine_and_rename(df_2016, 2016)
+df_2015 = combine_and_rename(df_2015, 2015)
+
+# Check if DataFrames are not empty and combine them
+if not df_2019.empty and not df_2018.empty and not df_2017.empty and not df_2016.empty and not df_2015.empty:
+    # Combine the data from all years
+    combined_df = pd.concat([df_2019, df_2018, df_2017, df_2016, df_2015], ignore_index=True)
+else:
+    print("At least one of the DataFrames is empty.")
+    
+# Drop the 'State' and 'Place' columns from combined_df
+combined_df.drop(['state', 'place'], axis=1, inplace=True, errors='ignore')
+
+# Pre-process 'Location' to keep only the first two comma-delimited components (city and state)
+# This lambda function splits each 'Location' entry, keeps only the first two elements, and then joins them back
+combined_df['Location'] = combined_df['Location'].apply(lambda x: ', '.join(x.split(', ')[:2]))
+
+# Now perform the split knowing each entry has at most two parts (and possibly fewer)
+split_locations = combined_df['Location'].str.split(', ', expand=True)
+combined_df['City'] = split_locations[0]  # The part before the comma becomes 'City'
+
+# Check if there is a second component for 'State'; if not, fill with 'Unknown'
+combined_df['State'] = split_locations[1] if split_locations.shape[1] > 1 else "Unknown"
+
+# Add the 'Country' column with all values set to "US"
+combined_df['Country'] = "US"
+
+# Remove specific strings "city" and "town" from the 'City' column
+combined_df['City'] = combined_df['City'].str.replace(' city', '', regex=False)
+combined_df['City'] = combined_df['City'].str.replace(' town', '', regex=False)
+
+# Drop the original 'Location' column if no longer needed
+combined_df.drop('Location', axis=1, inplace=True)
+
+print(combined_df.head())
+
+# Save the cleaned DataFrame to a CSV file
+combined_df.to_csv('/your/path/cleaned_census_data.csv', index=False)

@@ -1,0 +1,41 @@
+import pandas as pd
+
+# Load the data
+file_path = '/your/path/airport_geo.csv'
+df = pd.read_csv(file_path)
+
+df[['LAT_DEGREES', 'LAT_MINUTES', 'LAT_SECONDS', 'LAT_DIRECTION']] = df['LATITUDE'].str.extract(r'(\d{2})\.(\d{2})\.(\d{2})([NS])')
+df[['LONG_DEGREES', 'LONG_MINUTES', 'LONG_SECONDS', 'LONG_DIRECTION']] = df['LONGITUDE'].str.extract(r'(\d{1,3})\.(\d{2})\.(\d{2})([EW])')
+
+# Drop rows with NaN values in any of the specified DMS columns for latitude or longitude
+df.dropna(subset=['LAT_DEGREES', 'LAT_MINUTES', 'LAT_SECONDS', 'LAT_DIRECTION',
+                  'LONG_DEGREES', 'LONG_MINUTES', 'LONG_SECONDS', 'LONG_DIRECTION'], inplace=True)
+
+def dms_to_decimal(degrees, minutes, seconds, direction):
+    """
+    Convert DMS (Degrees, Minutes, Seconds) to Decimal Degrees, ensuring input types are correctly handled.
+    """
+    # Ensure the inputs are converted to integers for calculation
+    degrees = int(degrees)
+    minutes = int(minutes)
+    seconds = int(seconds)
+    
+    decimal_degrees = degrees + (minutes / 60) + (seconds / 3600)
+    
+    if direction in ['S', 'W']:
+        decimal_degrees *= -1
+        
+    return decimal_degrees
+
+# Apply the conversion function to the LATITUDE components
+df['DECIMAL_LATITUDE'] = df.apply(lambda row: dms_to_decimal(str(row['LAT_DEGREES']), str(row['LAT_MINUTES']), str(row['LAT_SECONDS']), row['LAT_DIRECTION']), axis=1)
+
+# Apply the conversion function to the LONGITUDE components
+df['DECIMAL_LONGITUDE'] = df.apply(lambda row: dms_to_decimal(str(row['LONG_DEGREES']), str(row['LONG_MINUTES']), str(row['LONG_SECONDS']), row['LONG_DIRECTION']), axis=1)
+
+#Drop unnecessary columns
+df.drop(columns=["COUNTRY_NAME", "DOMESTIC_FLG", "CITY_CODE", "LATITUDE", "LONGITUDE",
+                 "LAT_DEGREES", "LAT_MINUTES", "LAT_SECONDS", "LAT_DIRECTION",
+                 "LONG_DEGREES", "LONG_MINUTES", "LONG_SECONDS", "LONG_DIRECTION"], inplace=True)
+
+print(df) 

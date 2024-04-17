@@ -1,0 +1,73 @@
+import pandas as pd
+import numpy as np
+
+# Load the cleaned data from the provided CSV
+data = pd.read_csv('/your/path/cleaned_census_data.csv')  # Correct this path
+
+# Split the 'City_State_Country' column to create 'City', 'State', and 'Country' columns
+data[['City', 'State', 'Country']] = data['City_State_Country'].str.split('_', expand=True)
+
+# Ensure the 'POP' column is a floating-point number to accommodate NaNs
+data['POP'] = pd.to_numeric(data['POP'], errors='coerce')
+
+# Calculate the average annual growth rate from available data, ignoring NaNs
+yearly_growth_rates = []
+for _, city_data in data.groupby('City_State_Country'):
+    city_data = city_data.sort_values('Year')
+    city_data['Next_Year_POP'] = city_data['POP'].shift(-1)
+    yearly_growth_rates.extend(((city_data['Next_Year_POP'] / city_data['POP']) - 1).dropna().tolist())
+
+average_annual_growth_rate = np.mean(yearly_growth_rates)
+
+# Initialize an empty list to store the completed data
+completed_data_list = []
+
+# Process each City_State_Country group individually
+for city_state_country in data['City_State_Country'].unique():
+    city_data = data[data['City_State_Country'] == city_state_country].copy()
+    city_years = city_data['Year'].values
+    city, state, country = city_data[['City', 'State', 'Country']].iloc[0]
+
+    for year in range(2015, 2022):  # From 2015 to 2021 inclusive
+        if year not in city_years:
+            # Attempt to find the nearest years with known data before and after the current year
+            previous_years = city_data.loc[city_data['Year'] < year]
+            following_years = city_data.loc[city_data['Year'] > year]
+            
+            # Calculate population based on the closest known data using the average growth rate
+            if not previous_years.empty:
+                last_known_year = previous_years['Year'].max()
+                pop_to_use = previous_years.loc[previous_years['Year'] == last_known_year, 'POP'].iloc[0]
+                pop = pop_to_use * ((1 + average_annual_growth_rate) ** (year - last_known_year))
+            elif not following_years.empty:
+                next_known_year = following_years['Year'].min()
+                pop_to_use = following_years.loc[following_years['Year'] == next_known_year, 'POP'].iloc[0]
+                pop = pop_to_use / ((1 + average_annual_growth_rate) ** (next_known_year - year))
+            else:
+                # If there are no known years, we can't estimate the population
+                pop = np.nan
+
+            # Append the new row to the completed data list
+            completed_data_list.append({
+                'City_State_Country': city_state_country,
+                'Year': year,
+                'POP': pop,
+                'City': city,
+                'State': state,
+                'Country': country
+            })
+
+# Add the existing data to the completed data list
+completed_data_list.extend(data.to_dict('records'))
+
+# Convert the list of dictionaries to a DataFrame
+completed_data = pd.DataFrame(completed_data_list)
+
+# Sort the completed data by City_State_Country and Year
+completed_data.sort_values(by=['City_State_Country', 'Year'], inplace=True)
+
+# Save the completed data to a new CSV file
+completed_data.to_csv('/your/path/updated_census_data_with_forecasts.csv', index=False)
+
+# Since we can't execute local file operations, this script assumes the file paths given are accessible in the current environment.
+# In a local environment, replace the file paths with the correct absolute paths to the CSV files.

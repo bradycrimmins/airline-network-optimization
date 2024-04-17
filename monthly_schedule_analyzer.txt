@@ -1,0 +1,68 @@
+import pandas as pd
+import numpy as np
+
+# Load the data
+file_path = '/your/path/Schedule_Monthly_Summary_Report.csv'
+df = pd.read_csv(file_path, header =[5,6])
+
+# Number of bottom rows to drop
+n = 30
+ 
+# Dropping last n rows using drop
+df.drop(df.tail(n).index,
+        inplace = True)
+
+# Excluding Total Columns
+df = df.iloc[:,:-3]
+
+#Combining headers to one row
+df.columns = [f'{str(i[0])} {str(i[1])}' if i[1] else str(i[0]) for i in df.columns]
+
+# After combining, explicitly convert all column names to strings to avoid 'float' type issues
+df.columns = [str(col) for col in df.columns]
+
+df.columns = [col.replace('_level_0', '').split(' ')[-1] if 'Unnamed' in col else col for col in df.columns]
+
+# Initialize variables to hold the current date and the new column names list
+current_date = None
+new_column_names = []
+
+# Iterate through existing column names to propagate dates
+for col in df.columns:
+    # Check if the column name contains a date (assuming a format like 'Jan 2015')
+    if any(month in col for month in ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']):
+        current_date = ' '.join(col.split()[:2])  # Update the current_date
+    elif current_date and any(metric in col for metric in ['Flights', 'Seats', 'ASMs']):
+        # If there's a current date and the column is for 'Flights', 'Seats', or 'ASMs', append the date
+        col = f"{current_date} {col}"
+    # Add the updated or original column name to the new list
+    new_column_names.append(col)
+
+# Update the DataFrame's column names
+df.columns = new_column_names
+
+# First, create a new column to uniquely identify each row before melting
+df['id'] = df.index
+
+# Melting the DataFrame
+melted_df = pd.melt(df, id_vars=['id', 'Al', 'Orig'])
+
+split_cols = melted_df['variable'].str.rsplit(' ', n=1, expand=True)
+melted_df['Date'] = split_cols[0]
+melted_df['Metric'] = split_cols[1]
+
+# Now you can drop the 'variable' column as it's no longer needed
+melted_df.drop('variable', axis=1, inplace=True)
+melted_df.drop('id', axis=1, inplace=True)
+
+
+pivoted_df = melted_df.pivot_table(index=['Al', 'Orig', 'Date'], columns='Metric', values='value', aggfunc='first').reset_index()
+
+# First, ensure the 'Date' column is in a datetime format
+pivoted_df['Date'] = pd.to_datetime(pivoted_df['Date'], format='%b %Y')
+
+# Extract the month and year from the 'Date' column
+pivoted_df['Month'] = pivoted_df['Date'].dt.month_name()
+pivoted_df['Year'] = pivoted_df['Date'].dt.year
+
+pivoted_df

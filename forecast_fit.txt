@@ -1,0 +1,90 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.arima.model import ARIMA
+from statsmodels.tsa.statespace.sarimax import SARIMAX
+
+def load_data(filepath):
+    """Load the cleaned data from a CSV file."""
+    return pd.read_csv(filepath)
+
+def preprocess_and_aggregate(dataframe):
+    """Aggregate population data by year."""
+    aggregated_data = dataframe.groupby('Year')['POP'].sum().reset_index()
+    return aggregated_data
+
+def plot_data_with_fits(dataframe, lin_reg_pred, exp_pred, arima_pred, sarima_pred):
+    years = dataframe['Year']
+    population = dataframe['POP']
+
+    plt.figure(figsize=(10, 6))
+    plt.scatter(years, population, color='blue', label='Actual Data')
+    plt.plot(years, lin_reg_pred, color='red', label='Linear Regression')
+    plt.plot(years, exp_pred, color='green', label='Exponential Smoothing')
+    plt.plot(years, arima_pred, color='purple', label='ARIMA')
+    plt.plot(years, sarima_pred, color='orange', label='SARIMA')
+    
+    plt.xlabel('Year')
+    plt.ylabel('Total Population')
+    plt.title('Year vs Total Population with Model Fits')
+    plt.xticks(years)  # Ensure x-axis only includes whole integer years
+    plt.legend()
+    plt.show()
+
+def evaluate_models(dataframe):
+    years = dataframe['Year'].values.reshape(-1, 1)
+    population = dataframe['POP'].values
+
+    # Fit Linear Regression
+    lin_reg_model = LinearRegression()
+    lin_reg_model.fit(years, population)
+    lin_reg_pred = lin_reg_model.predict(years)
+
+    # Fit Exponential Smoothing
+    exp_model = ExponentialSmoothing(population, trend='add', seasonal=None, initialization_method='estimated')
+    exp_model_fit = exp_model.fit()
+    exp_pred = exp_model_fit.fittedvalues
+
+    # Fit ARIMA model without differencing
+    arima_model = ARIMA(population, order=(1,0,1))  # Set d=0 for no differencing
+    arima_model_fit = arima_model.fit()
+    arima_pred = arima_model_fit.predict(start=1, end=len(population), typ='levels')
+
+    # Fit SARIMA model
+    sarima_model = SARIMAX(population, order=(1, 1, 1), seasonal_order=(1, 1, 1, 12), initialization='approximate_diffuse')
+    sarima_model_fit = sarima_model.fit()
+    sarima_pred = sarima_model_fit.predict(start=1, end=len(population), typ='levels')
+
+    plot_data_with_fits(dataframe, lin_reg_pred, exp_pred, arima_pred, sarima_pred)
+
+    # Evaluation
+    models = ['Linear Regression', 'Exponential Smoothing', 'ARIMA', 'SARIMA']
+    predictions = [lin_reg_pred, exp_pred, arima_pred, sarima_pred]
+    results = {}
+    
+    for model, pred in zip(models, predictions):
+        mse = mean_squared_error(population, pred)
+        rmse = np.sqrt(mse)
+        mae = mean_absolute_error(population, pred)
+        r2 = r2_score(population, pred)
+        results[model] = {'MSE': mse, 'RMSE': rmse, 'MAE': mae, 'R^2': r2}
+
+    return results
+
+def main():
+    filepath = '/your/path/cleaned_census_data.csv'
+    df = load_data(filepath)
+    aggregated_df = preprocess_and_aggregate(df)
+    model_results = evaluate_models(aggregated_df)
+
+    print("Evaluation Results:")
+    for model, metrics in model_results.items():
+        print(f"\n{model} results:")
+        for key, value in metrics.items():
+            print(f"{key}: {value:.2f}")
+
+if __name__ == "__main__":
+    main()
